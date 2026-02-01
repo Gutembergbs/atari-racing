@@ -17,6 +17,26 @@ let roadCurve = 0, targetCurve = 0, curveTimer = 0;
 let npcs = [];
 const maxNpcs = 3;
 
+// --- AABB ---
+function checkAABB(a, b) {
+    return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+    );
+}
+
+function getPlayerHitbox() {
+    const r = car.getBoundingClientRect();
+    return {
+        x: r.left,
+        y: r.top,
+        width: r.width,
+        height: r.height
+    };
+}
+
 // --- INICIALIZAÇÃO ---
 function init() {
     // Criar linhas da estrada
@@ -131,63 +151,57 @@ function renderRoad() {
 }
 
 function updateNPCs() {
-    let activeNpcs = npcs.filter(n => n.active).length;
+    const playerBox = getPlayerHitbox();
 
     npcs.forEach(npc => {
-        // Nascimento do NPC
-        if (!npc.active && activeNpcs === 0 && speed > 0.5 && Math.random() < 0.01) {
+        if (!npc.active && speed > 0.5 && Math.random() < 0.01) {
             npc.active = true;
-            npc.z = 1.0; // Inicia no horizonte virtual
-            npc.x = (Math.random() * 1.0) - 0.5;
+            npc.z = 1;
+            npc.x = Math.random() - 0.5;
             npc.npcSpeed = speed * 0.5;
             npc.element.style.display = 'block';
-            npc.element.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 40%)`;
-            npc.element.style.boxShadow = "none";
         }
 
-        if (npc.active) {
-            let relativeSpeed = (speed - npc.npcSpeed) * 0.002;
-            npc.z -= relativeSpeed;
+        if (!npc.active) return;
 
-            // Detecção de colisão (mantida a lógica anterior refinada)
-            if (npc.z <= 0.12 && npc.z > -0.08) {
-                let dx = npc.x - playerX;
-                if (Math.abs(dx) < 0.28) { 
-                    speed *= 0.2;
-                    npc.npcSpeed += 1.2;
-                    npc.element.style.boxShadow = "0 0 30px yellow";
-                    if (dx > 0) { targetX -= 0.15; npc.x += 0.1; }
-                    else { targetX += 0.15; npc.x -= 0.1; }
-                    if (npc.z > 0) speed = 0;
-                }
-            }
+        npc.z -= (speed - npc.npcSpeed) * 0.002;
 
-            // AJUSTE DE SUMIÇO E POSIÇÃO Y
-            if (npc.z < -0.5 || npc.z > 1.0) {
-                npc.active = false;
-                npc.element.style.display = 'none';
-            } else {
-                let p = Math.max(0.01, 1 - npc.z);
-                
-                // AJUSTE SOLICITADO: Subtraímos 20px do cálculo de Y para elevar o ponto de fuga
-                // O (1-p) garante que a elevação seja maior quanto mais longe o carro estiver
-                let horizonOffset = (1 - p) * 20; 
-                let perspectiveY = (200 - horizonOffset) + (p * 300); 
+        if (npc.z < -0.5 || npc.z > 1) {
+            npc.active = false;
+            npc.element.style.display = 'none';
+            return;
+        }
 
-                let scale = 0.05 + (p * 0.95);
-                let curveFactor = Math.pow(1 - p, 3);
-                let xShift = (curveFactor * roadCurve) - (playerX * p * 400);
-                let npcScreenX = 400 + xShift + (npc.x * p * 400);
+        let p = Math.max(0.01, 1 - npc.z);
+        let scale = 0.05 + (p * 0.95);
+        let curveFactor = Math.pow(1 - p, 3);
+        let xShift = (curveFactor * roadCurve) - (playerX * p * 400);
+        let x = 400 + xShift + (npc.x * p * 400);
+        let y = 200 + (p * 300);
 
-                // Aplica a nova posição vertical
-                npc.element.style.top = (perspectiveY - (40 * scale)) + 'px';
-                npc.element.style.left = npcScreenX + 'px';
-                npc.element.style.transform = `translateX(-50%) scale(${scale})`;
-                npc.element.style.zIndex = Math.floor(p * 100);
-            }
+        npc.element.style.left = x + 'px';
+        npc.element.style.top = y + 'px';
+        npc.element.style.transform = `translateX(-50%) scale(${scale})`;
+        npc.element.style.zIndex = Math.floor(p * 100);
+
+        // --- HITBOX NPC ---
+        const r = npc.element.getBoundingClientRect();
+        const npcBox = { x: r.left, y: r.top, width: r.width, height: r.height };
+
+        // --- COLISÃO AABB ---
+        if (checkAABB(playerBox, npcBox)) {
+            speed *= 0.2;
+            npc.npcSpeed += 1.2;
+            npc.element.style.boxShadow = "0 0 25px red";
+
+            if (npcBox.x > playerBox.x) targetX -= 0.15;
+            else targetX += 0.15;
+        } else {
+            npc.element.style.boxShadow = "none";
         }
     });
 }
+
 
 function updatePlayerView() {
     car.style.left = `calc(50% + ${playerX * 300}px)`;
